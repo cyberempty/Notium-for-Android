@@ -2,7 +2,8 @@
 # ==============================================================================
 #  NOTIUM BUILD SYSTEM  (Linux / macOS)
 #  Builds "src" and creates Notium.apk in the Notium-android-APK folder.
-#  Portable: everything needed is downloaded into build-tools/tools
+#  Portable: everything needed is downloaded into build-tools/tools the first time and
+#  reused afterwards (later builds also work without internet while that folder is kept).
 # ==============================================================================
 set -u
 set -o pipefail
@@ -24,15 +25,16 @@ GLOG="$TOOLS/.gradle-run.log"
 
 # ---- user interface
 if [ -t 1 ]; then
-  TTY=1; R=$'\033[0m'; DIM=$'\033[90m'; BOLD=$'\033[1m'; RED=$'\033[91m'; GRN=$'\033[92m'; YEL=$'\033[93m'; WHT=$'\033[97m'
+  TTY=1; ACC=$'\033[96m'; R=$'\033[0m'; DIM=$'\033[90m'; BOLD=$'\033[1m'; RED=$'\033[91m'; GRN=$'\033[92m'; YEL=$'\033[93m'; WHT=$'\033[97m'
 else
-  TTY=0; R=""; DIM=""; BOLD=""; RED=""; GRN=""; YEL=""; WHT=""
+  TTY=0; ACC=""; R=""; DIM=""; BOLD=""; RED=""; GRN=""; YEL=""; WHT=""
 fi
 T0=$(date +%s)
 PHASES=6
 W=(3 10 4 15 60 8)
 B=(0 3 13 17 32 92)
 PHASE_NAMES=("Checking environment" "JDK 17 (Temurin)" "Android command-line tools" "Android SDK 35 and build-tools" "Compiling and optimizing (R8)" "Finalizing")
+FILLC="█"; EMPTYC="░"
 PHASE=0
 PCT=0
 
@@ -42,10 +44,10 @@ logf() { printf '%s  %-5s  %s\n' "$(elapsed)" "$1" "$2" >> "$LOG"; }
 bar() {
   # bar <percent 0-100> <text>
   local p=$1 txt=$2 n=$(( $1 * 40 / 100 )) i filled="" empty=""
-  for ((i=0;i<n;i++)); do filled+="█"; done
-  for ((i=n;i<40;i++)); do empty+="░"; done
+  for ((i=0;i<n;i++)); do filled+="$FILLC"; done
+  for ((i=n;i<40;i++)); do empty+="$EMPTYC"; done
   if [ "$TTY" = 1 ]; then
-    printf '\r\033[K  %s%s%s%s%s %3d%%  %s%s%s' "$WHT" "$filled" "$DIM" "$empty" "$R" "$p" "$DIM" "${txt:0:48}" "$R"
+    printf '\r\033[K  %s%s%s%s%s %3d%%  %s%s%s' "$ACC" "$filled" "$DIM" "$empty" "$R" "$p" "$DIM" "${txt:0:48}" "$R"
   fi
 }
 
@@ -116,7 +118,8 @@ unzip_to() { # unzip_to <zip> <folder>
 : > "$LOG"
 clear_screen() { [ "$TTY" = 1 ] && printf '\033[2J\033[H'; }
 clear_screen
-printf '\n %s%s NOTIUM  BUILD SYSTEM%s\n %s%s%s\n' "$BOLD" "$WHT" "$R" "$DIM" "$(printf '─%.0s' $(seq 1 64))" "$R"
+if [ -f "$MARK" ]; then SUB="components already present: no network needed"; else SUB="first build: internet connection required"; fi
+printf '\n %s%s NOTIUM  BUILD SYSTEM%s\n %s%s %s%s\n %s%s%s\n' "$BOLD" "$WHT" "$R" "$ACC" "$BOLD" "$SUB" "$R" "$DIM" "$(printf '─%.0s' $(seq 1 64))" "$R"
 
 # ---- Phase 1
 phase 1
@@ -137,11 +140,11 @@ need tar || fail "The tar command is required."
 [ -f "$PDIR/gradlew" ] || fail "Folder \"src\" is missing or incomplete: $PDIR"
 chmod +x "$PDIR/gradlew" 2>/dev/null
 mkdir -p "$TOOLS" "$BUILDER/signing"
-OFFLINE=0
-[ -f "$MARK" ] && OFFLINE=1
+LOCAL=0
+[ -f "$MARK" ] && LOCAL=1
 info "Project       $PDIR"
 info "Components    $TOOLS"
-if [ "$OFFLINE" = 1 ]; then ok "Mode          Offline (components already present)"; else info "Mode          Online (first build: downloading components)"; fi
+if [ "$LOCAL" = 1 ]; then ok "Mode          Components already present (no download needed)"; else info "Mode          First build: downloading components"; fi
 info "System        $OS / $ARCH"
 endphase
 
@@ -235,10 +238,10 @@ run_gradle() { # run_gradle [--offline]
   return "${PIPESTATUS[0]}"
 }
 
-if [ "$OFFLINE" = 1 ]; then info "Gradle in offline mode"; else info "Gradle: downloading Gradle and libraries on first run"; fi
+if [ "$LOCAL" = 1 ]; then info "Gradle without network access (--offline)"; else info "Gradle: downloading Gradle and libraries when missing"; fi
 info "Starting release build (optimized with R8)"
-if [ "$OFFLINE" = 1 ]; then run_gradle --offline; code=$?; else run_gradle; code=$?; fi
-if [ "$code" -ne 0 ] && [ "$OFFLINE" = 1 ] && ! grep -q '^e: ' "$GLOG"; then
+if [ "$LOCAL" = 1 ]; then run_gradle --offline; code=$?; else run_gradle; code=$?; fi
+if [ "$code" -ne 0 ] && [ "$LOCAL" = 1 ] && ! grep -q '^e: ' "$GLOG"; then
   warn "Components missing from the local cache: retrying with network access"
   run_gradle; code=$?
 fi
@@ -272,6 +275,7 @@ printf '  Version      %s\n' "$APP_VERSION"
 printf '  Duration     %s\n' "$(elapsed)"
 printf '  Signing      local key in build-tools/signing\n'
 printf ' %s%s%s\n\n' "$DIM" "$LINE" "$R"
+printf '  Downloaded components stay in build-tools/tools and are reused by the next builds (you may delete that folder).\n\n'
 printf '  Copy Notium.apk to your phone and open it. If a version signed with a different key is already installed,\n'
 printf '  uninstall it first (Android does not allow overwriting an app signed with a different key).\n\n'
 exit 0

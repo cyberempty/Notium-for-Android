@@ -1,5 +1,7 @@
 package com.notium.app.ui
 
+import androidx.compose.material.icons.outlined.LockOpen
+import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -7,6 +9,10 @@ import androidx.compose.animation.core.spring
 import androidx.compose.foundation.lazy.grid.LazyGridItemScope
 
 import androidx.compose.animation.AnimatedVisibility
+import com.notium.app.data.SwipeAction
+import androidx.compose.material3.rememberSwipeToDismissBoxState
+import androidx.compose.material3.SwipeToDismissBoxValue
+import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -175,7 +181,7 @@ fun HomeScreen(vm: AppViewModel) {
         val content: @Composable () -> Unit = {
             Scaffold(
                 containerColor = MaterialTheme.colorScheme.background,
-                floatingActionButtonPosition = if (settings.fabPlace == FabPlace.CENTER) FabPosition.Center else FabPosition.End,
+                floatingActionButtonPosition = when (settings.fabPlace) { FabPlace.CENTER -> FabPosition.Center; FabPlace.START -> FabPosition.Start; else -> FabPosition.End },
                 topBar = {
                     if (selecting) SelectionBar(
                         count = selectedNotes.size, total = notes.size,
@@ -490,9 +496,68 @@ private fun SelectionBar(
     )
 }
 
-@OptIn(ExperimentalFoundationApi::class)
+/** Scheda di una nota con i gesti di scorrimento personalizzabili (Impostazioni > Elenco note). */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun NoteRow(
+    vm: AppViewModel, n: NoteSummary, folderName: String?, query: String, s: Settings,
+    onMove: (NoteSummary) -> Unit, onDelete: (NoteSummary) -> Unit, showPin: Boolean = false, onExport: (NoteSummary, ExportFormat) -> Unit = { _, _ -> },
+    selecting: Boolean = false, selected: Boolean = false, onSelect: () -> Unit = {}, modifier: Modifier = Modifier,
+) {
+    val left = s.swipeLeft
+    val right = s.swipeRight
+    val enabled = !selecting && !n.deleted && (left != SwipeAction.NONE || right != SwipeAction.NONE)
+    if (!enabled) {
+        NoteCard(vm, n, folderName, query, s, onMove, onDelete, showPin, onExport, selecting, selected, onSelect, modifier)
+        return
+    }
+    val state = rememberSwipeToDismissBoxState(confirmValueChange = { v ->
+        when (v) {
+            SwipeToDismissBoxValue.StartToEnd -> vm.swipeAction(right, n)
+            SwipeToDismissBoxValue.EndToStart -> vm.swipeAction(left, n)
+            else -> {}
+        }
+        false // la scheda torna al suo posto: se la nota sparisce dall'elenco lo fa la lista
+    })
+    SwipeToDismissBox(
+        state = state, modifier = modifier,
+        enableDismissFromStartToEnd = right != SwipeAction.NONE,
+        enableDismissFromEndToStart = left != SwipeAction.NONE,
+        backgroundContent = {
+            val dir = state.dismissDirection
+            val a = if (dir == SwipeToDismissBoxValue.StartToEnd) right else left
+            val danger = a == SwipeAction.TRASH
+            val end = dir == SwipeToDismissBoxValue.EndToStart
+            if (dir != SwipeToDismissBoxValue.Settled) Box(
+                Modifier.fillMaxSize().clip(MaterialTheme.shapes.medium)
+                    .background(if (danger) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.secondaryContainer)
+                    .padding(horizontal = 20.dp),
+                contentAlignment = if (end) Alignment.CenterEnd else Alignment.CenterStart,
+            ) {
+                val tint = if (danger) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSecondaryContainer
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (end) Text(a.label, color = tint, style = MaterialTheme.typography.labelLarge)
+                    Icon(
+                        when (a) {
+                            SwipeAction.TRASH -> Icons.Outlined.Delete
+                            SwipeAction.ARCHIVE -> if (n.archived) Icons.Outlined.Unarchive else Icons.Outlined.Archive
+                            SwipeAction.FAVORITE -> Icons.Outlined.Star
+                            SwipeAction.PIN -> Icons.Outlined.PushPin
+                            else -> if (n.id in s.lockedNotes) Icons.Outlined.LockOpen else Icons.Outlined.Lock
+                        }, null, tint = tint,
+                    )
+                    if (!end) Text(a.label, color = tint, style = MaterialTheme.typography.labelLarge)
+                }
+            }
+        },
+    ) {
+        NoteCard(vm, n, folderName, query, s, onMove, onDelete, showPin, onExport, selecting, selected, onSelect, Modifier)
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun NoteCard(
     vm: AppViewModel, n: NoteSummary, folderName: String?, query: String, s: Settings,
     onMove: (NoteSummary) -> Unit, onDelete: (NoteSummary) -> Unit, showPin: Boolean = false, onExport: (NoteSummary, ExportFormat) -> Unit = { _, _ -> },
     selecting: Boolean = false, selected: Boolean = false, onSelect: () -> Unit = {}, modifier: Modifier = Modifier,
@@ -522,7 +587,7 @@ private fun NoteRow(
             .graphicsLayer { scaleX = scale; scaleY = scale }
             .combinedClickable(
                 interactionSource = src, indication = LocalIndication.current,
-                onClick = { if (selecting) onSelect() else vm.openNote(n.id) },
+                onClick = { if (selecting) onSelect() else vm.requestOpen(n.id) },
                 onLongClick = { if (!selecting && !n.deleted) onSelect() },
             ),
     ) {
@@ -536,6 +601,7 @@ private fun NoteRow(
                     fontStyle = if (n.title.isBlank()) FontStyle.Italic else FontStyle.Normal,
                     maxLines = s.titleLines.coerceIn(1, 3), overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f)
                 )
+                if (n.id in s.lockedNotes) Icon(Icons.Outlined.Lock, "Nota bloccata", Modifier.size(16.dp).padding(end = 2.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (!selecting) {
                 if (!n.deleted && showPin) {
                     IconButton(onClick = { vm.togglePinned(n) }, modifier = Modifier.size(32.dp)) {
@@ -566,7 +632,7 @@ private fun NoteRow(
                         if (n.deleted) {
                             DropdownMenuItem(text = { Text("Ripristina") }, leadingIcon = { Icon(Icons.Outlined.Restore, null) },
                                 onClick = { menu = false; vm.restore(n) })
-                            DropdownMenuItem(text = { Text("Elimina definitivamente") }, leadingIcon = { Icon(Icons.Outlined.DeleteForever, null) },
+                            DropdownMenuItem(text = { Text("Elimina definitivamente", color = MaterialTheme.colorScheme.error) }, leadingIcon = { Icon(Icons.Outlined.DeleteForever, null, tint = MaterialTheme.colorScheme.error) },
                                 onClick = { menu = false; onDelete(n) })
                         } else {
                             DropdownMenuItem(text = { Text(if (n.pinned) "Rimuovi da fissate" else "Fissa in alto") },
@@ -577,9 +643,12 @@ private fun NoteRow(
                             DropdownMenuItem(text = { Text(if (n.archived) "Ripristina dall'archivio" else "Archivia") },
                                 leadingIcon = { Icon(if (n.archived) Icons.Outlined.Unarchive else Icons.Outlined.Archive, null) },
                                 onClick = { menu = false; vm.toggleArchived(n) })
+                            DropdownMenuItem(text = { Text(if (n.id in s.lockedNotes) "Sblocca nota" else "Blocca nota") },
+                                leadingIcon = { Icon(if (n.id in s.lockedNotes) Icons.Outlined.LockOpen else Icons.Outlined.Lock, null) },
+                                onClick = { menu = false; vm.toggleNoteLock(n.id) })
                             DropdownMenuItem(text = { Text("Sposta in cartella") }, leadingIcon = { Icon(Icons.Outlined.DriveFileMove, null) },
                                 onClick = { menu = false; onMove(n) })
-                            DropdownMenuItem(text = { Text("Sposta nel cestino") }, leadingIcon = { Icon(Icons.Outlined.Delete, null) },
+                            DropdownMenuItem(text = { Text("Sposta nel cestino", color = MaterialTheme.colorScheme.error) }, leadingIcon = { Icon(Icons.Outlined.Delete, null, tint = MaterialTheme.colorScheme.error) },
                                 onClick = { menu = false; vm.trash(n) })
                         }
                         ExportEntry { exportSub = true }

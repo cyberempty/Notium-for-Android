@@ -50,4 +50,26 @@ object BiometricHelper {
         BiometricPrompt(activity, executor, callback)
             .authenticate(info, BiometricPrompt.CryptoObject(cipher))
     }
+
+    /** Autenticazione biometrica semplice (senza chiave): usata per il blocco grafico delle singole note. */
+    fun authenticate(
+        activity: FragmentActivity,
+        title: String,
+        negativeText: String,
+        onSuccess: () -> Unit,
+        onFallback: () -> Unit,
+    ) {
+        val executor = ContextCompat.getMainExecutor(activity)
+        val callback = object : BiometricPrompt.AuthenticationCallback() {
+            override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) = onSuccess()
+            override fun onAuthenticationError(errorCode: Int, errString: CharSequence) = onFallback()
+        }
+        val info = BiometricPrompt.PromptInfo.Builder()
+            .setTitle(title)
+            .setNegativeButtonText(negativeText)
+            .setAllowedAuthenticators(AUTH)
+            .setConfirmationRequired(false)
+            .build()
+        BiometricPrompt(activity, executor, callback).authenticate(info)
+    }
 }

@@ -116,6 +116,10 @@ class VaultManager(context: Context) {
         KeystoreKeys.openWithDevice(Crypto.unb64(read().getString("autoWrapped")))
     } catch (e: Exception) { null }
 
+    /** Se attivo, l'app chiede sempre la password principale anche senza PIN ne' impronta. */
+    fun isPasswordLockEnabled(): Boolean = exists() && read().optBoolean("pwLock", false)
+    fun setPasswordLock(on: Boolean) { if (exists()) write(read().put("pwLock", on).also { if (on) it.remove("autoWrapped") }) }
+
     fun isPinEnabled(): Boolean = exists() && read().optBoolean("pinEnabled", false)
 
     fun enablePin(master: ByteArray, pin: CharArray) {

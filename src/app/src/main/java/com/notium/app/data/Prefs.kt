@@ -15,8 +15,14 @@ private val Context.store by preferencesDataStore(name = "notium_prefs")
 
 enum class ThemeMode(val label: String) { SYSTEM("Automatico"), LIGHT("Chiaro"), DARK("Scuro"), BLACK("Nero (AMOLED)") }
 enum class FabStyle(val label: String) { EXTENDED("Con testo"), ICON("Solo icona"), HIDDEN("Nascosto") }
-enum class FabPlace(val label: String) { END("A destra"), CENTER("Al centro") }
+enum class FabPlace(val label: String) { END("A destra"), CENTER("Al centro"), START("A sinistra") }
 enum class StartSection(val label: String) { ALL("Tutte le note"), FAVORITES("Preferiti"), PINNED("Fissate"), ARCHIVE("Archivio") }
+/** Azione assegnabile al gesto di scorrimento di una nota nell'elenco. */
+enum class SwipeAction(val label: String) {
+    NONE("Nessuna azione"), TRASH("Sposta nel cestino"), ARCHIVE("Archivia / ripristina"),
+    FAVORITE("Aggiungi / rimuovi dai preferiti"), PIN("Fissa / sblocca in alto"), LOCK("Blocca / sblocca nota"),
+}
+
 enum class DateStyle(val label: String) {
     SHORT("Breve (12 nov)"), MEDIUM("Normale (12 nov 2026)"), LONG("Estesa (12 novembre 2026)"),
     RELATIVE("Relativa (2 giorni fa)"), WITH_TIME("Con ora (12 nov 2026, 21:40)")
@@ -79,9 +85,13 @@ data class Settings(
     val showTopLogo: Boolean = true,
     val fabStyle: FabStyle = FabStyle.EXTENDED,
     val fabPlace: FabPlace = FabPlace.END,
+    val swipeLeft: SwipeAction = SwipeAction.TRASH,    // scorrere da destra verso sinistra
+    val swipeRight: SwipeAction = SwipeAction.ARCHIVE, // scorrere da sinistra verso destra
     val titleLines: Int = 1,
     val startSection: StartSection = StartSection.ALL,
     val dateStyle: DateStyle = DateStyle.MEDIUM,
+    /** Blocchi grafici delle singole note: "id|P/W|salt|hash". Restano sul dispositivo, non entrano nei backup. */
+    val noteLocks: Set<String> = emptySet(),
     val editorMargin: Int = 20,             // dp
     val titleSize: Float = 26f,             // sp
     val autoCorrect: Boolean = true,
@@ -103,7 +113,9 @@ data class Settings(
     val trashDays: Int = 30,                // 0 = non svuotare automaticamente
     val language: AppLang = AppLang.EN,
     val langChosen: Boolean = false,
-)
+) {
+    val lockedNotes: Set<Long> get() = noteLocks.mapNotNull { it.substringBefore('|').toLongOrNull() }.toSet()
+}
 
 class Prefs(private val context: Context) {
     private object K {
@@ -148,9 +160,12 @@ class Prefs(private val context: Context) {
         val topLogo = booleanPreferencesKey("top_logo")
         val fabStyle = stringPreferencesKey("fab_style")
         val fabPlace = stringPreferencesKey("fab_place")
+        val swipeLeft = stringPreferencesKey("swipe_left")
+        val swipeRight = stringPreferencesKey("swipe_right")
         val titleLines = intPreferencesKey("title_lines")
         val startSec = stringPreferencesKey("start_section")
         val dateStyle = stringPreferencesKey("date_style")
+        val lockedNotes = androidx.datastore.preferences.core.stringSetPreferencesKey("note_locks")
         val edMargin = intPreferencesKey("ed_margin")
         val titleSize = floatPreferencesKey("title_size")
         val autoCorrect = booleanPreferencesKey("auto_correct")
@@ -221,9 +236,12 @@ class Prefs(private val context: Context) {
             showTopLogo = p[K.topLogo] ?: d.showTopLogo,
             fabStyle = p[K.fabStyle].toEnum(d.fabStyle),
             fabPlace = p[K.fabPlace].toEnum(d.fabPlace),
+            swipeLeft = p[K.swipeLeft].toEnum(d.swipeLeft),
+            swipeRight = p[K.swipeRight].toEnum(d.swipeRight),
             titleLines = p[K.titleLines] ?: d.titleLines,
             startSection = p[K.startSec].toEnum(d.startSection),
             dateStyle = p[K.dateStyle].toEnum(d.dateStyle),
+            noteLocks = p[K.lockedNotes]?.filter { it.contains('|') }?.toSet() ?: d.noteLocks,
             editorMargin = p[K.edMargin] ?: d.editorMargin,
             titleSize = p[K.titleSize] ?: d.titleSize,
             autoCorrect = p[K.autoCorrect] ?: d.autoCorrect,
@@ -292,9 +310,12 @@ class Prefs(private val context: Context) {
             p[K.topLogo] = s.showTopLogo
             p[K.fabStyle] = s.fabStyle.name
             p[K.fabPlace] = s.fabPlace.name
+            p[K.swipeLeft] = s.swipeLeft.name
+            p[K.swipeRight] = s.swipeRight.name
             p[K.titleLines] = s.titleLines
             p[K.startSec] = s.startSection.name
             p[K.dateStyle] = s.dateStyle.name
+            p[K.lockedNotes] = s.noteLocks
             p[K.edMargin] = s.editorMargin
             p[K.titleSize] = s.titleSize
             p[K.autoCorrect] = s.autoCorrect

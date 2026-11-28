@@ -137,6 +137,31 @@ fun PasswordField(
     )
 }
 
+/** Campo PIN/password con l'occhio. [visible]/[onToggle] permettono di condividere lo stato tra piu' campi dello stesso popup. */
+@Composable
+fun SecretField(
+    value: String,
+    onChange: (String) -> Unit,
+    label: String,
+    visible: Boolean,
+    onToggle: () -> Unit,
+    modifier: Modifier = Modifier,
+    numeric: Boolean = false,
+    isError: Boolean = false,
+) {
+    OutlinedTextField(
+        value = value, onValueChange = onChange, label = { Text(label) }, singleLine = true, isError = isError,
+        visualTransformation = if (visible) VisualTransformation.None else PasswordVisualTransformation(),
+        keyboardOptions = KeyboardOptions(keyboardType = if (numeric) KeyboardType.NumberPassword else KeyboardType.Password, autoCorrectEnabled = false),
+        trailingIcon = {
+            IconButton(onClick = onToggle) {
+                Icon(if (visible) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility, if (visible) "Nascondi" else "Mostra")
+            }
+        },
+        modifier = modifier.fillMaxWidth(),
+    )
+}
+
 @Composable
 fun StrengthBar(strength: Strength) {
     if (strength == Strength.EMPTY) return

@@ -465,5 +465,61 @@ Backup pronto ::: Backup ready ::: Copia lista ::: 备份就绪
 Scegli un altro file ::: Choose another file ::: Elegir otro archivo ::: 选择其他文件
 Le tue note sono qui ::: Your notes are here ::: Tus notas están aquí ::: 你的笔记都在这里
 Importate {1} note, {2} cartelle e {3} tag dal backup. ::: Imported {1} notes, {2} folders and {3} tags from the backup. ::: Se importaron {1} notas, {2} carpetas y {3} etiquetas de la copia. ::: 已从备份导入 {1} 条笔记、{2} 个文件夹和 {3} 个标签。
+Le tue note. La tua privacy. · 100% offline · Android 8.0+ ::: Your notes. Your privacy. · 100% offline · Android 8.0+ ::: Tus notas. Tu privacidad. · 100% sin conexión · Android 8.0+ ::: 你的笔记，你的隐私。· 100% 离线 · Android 8.0+
+Cos'è Notium ::: What is Notium ::: Qué es Notium ::: Notium 是什么
+Un'app per appunti pensata per la riservatezza: scrivi, organizza e ritrova le tue note senza che nulla lasci il dispositivo. ::: A note-taking app built for privacy: write, organize and find your notes without anything leaving your device. ::: Una app de notas pensada para la privacidad: escribe, organiza y encuentra tus notas sin que nada salga del dispositivo. ::: 专为隐私设计的笔记应用：书写、整理和查找笔记，所有内容都不会离开你的设备。
+Nessuna connessione ::: No connection ::: Sin conexión ::: 无需联网
+Non richiede internet, non ha account, pubblicità, statistiche né servizi di tracciamento. ::: It needs no internet and has no accounts, ads, analytics or tracking services. ::: No necesita internet ni tiene cuentas, anuncios, estadísticas ni servicios de rastreo. ::: 无需网络，没有账号、广告、统计或追踪服务。
+Cifratura ::: Encryption ::: Cifrado ::: 加密
+Il database è cifrato con SQLCipher; le chiavi sono protette da Argon2id, AES-256-GCM e dal Keystore di Android. ::: The database is encrypted with SQLCipher; keys are protected by Argon2id, AES-256-GCM and the Android Keystore. ::: La base de datos está cifrada con SQLCipher; las claves se protegen con Argon2id, AES-256-GCM y el Keystore de Android. ::: 数据库使用 SQLCipher 加密；密钥由 Argon2id、AES-256-GCM 和 Android Keystore 保护。
+Accesso ::: Access ::: Acceso ::: 访问
+Proteggi l'app con password, PIN e impronta digitale. Se dimentichi la password, i dati non sono recuperabili. ::: Protect the app with a password, PIN and fingerprint. If you forget the password, your data cannot be recovered. ::: Protege la app con contraseña, PIN y huella. Si olvidas la contraseña, los datos no se pueden recuperar. ::: 用密码、PIN 和指纹保护应用。若忘记密码，数据将无法恢复。
+Esporta e ripristina le tue note con un backup cifrato o non cifrato, sempre sotto il tuo controllo. ::: Export and restore your notes with an encrypted or unencrypted backup, always under your control. ::: Exporta y restaura tus notas con una copia de seguridad cifrada o sin cifrar, siempre bajo tu control. ::: 通过加密或未加密的备份导出和恢复笔记，始终由你掌控。
+Salvare le modifiche? ::: Save changes? ::: ¿Guardar los cambios? ::: 保存更改？
+Hai modifiche non salvate alle impostazioni. ::: You have unsaved changes to the settings. ::: Tienes cambios sin guardar en los ajustes. ::: 设置中有未保存的更改。
+Annulla modifiche ::: Discard changes ::: Descartar cambios ::: 放弃更改
+Crea backup non cifrato ::: Create unencrypted backup ::: Crear copia sin cifrar ::: 创建未加密备份
+File .json leggibile da chiunque lo possieda: le note sono in chiaro ::: .json file readable by anyone who has it: notes are in plain text ::: Archivo .json legible por cualquiera que lo tenga: las notas están en texto plano ::: 任何拿到该 .json 文件的人都能读取：笔记为明文
+Creare un backup non cifrato? ::: Create an unencrypted backup? ::: ¿Crear una copia sin cifrar? ::: 创建未加密备份？
+Il file conterrà tutte le tue note in chiaro, senza password. Conservalo solo in un posto di cui ti fidi. ::: The file will contain all your notes in plain text, with no password. Keep it only somewhere you trust. ::: El archivo contendrá todas tus notas en texto plano, sin contraseña. Guárdalo solo en un lugar de confianza. ::: 该文件将以明文包含你的所有笔记，没有密码。请只保存在你信任的地方。
+Crea backup ::: Create backup ::: Crear copia ::: 创建备份
+Backup non cifrato creato: {1} note. ::: Unencrypted backup created: {1} notes. ::: Copia sin cifrar creada: {1} notas. ::: 未加密备份已创建：{1} 条笔记。
+Crea e ripristina backup, cifrati o non cifrati ::: Create and restore backups, encrypted or not ::: Crea y restaura copias, cifradas o sin cifrar ::: 创建和恢复备份，加密或未加密
+Sostituisce tutte le note con quelle del file (cifrato o non cifrato). Prima verifica integrità e firma. ::: Replaces all notes with those in the file (encrypted or not). Integrity and signature are checked first. ::: Sustituye todas las notas por las del archivo (cifrado o no). Antes se verifican integridad y firma. ::: 用文件中的笔记替换所有笔记（加密或未加密）。会先验证完整性和签名。
+Blocca nota ::: Lock note ::: Bloquear nota ::: 锁定笔记
+Sblocca nota ::: Unlock note ::: Desbloquear nota ::: 解锁笔记
+Nota bloccata ::: Note locked ::: Nota bloqueada ::: 笔记已锁定
+Nota bloccata. ::: Note locked. ::: Nota bloqueada. ::: 笔记已锁定。
+Nota sbloccata. ::: Note unlocked. ::: Nota desbloqueada. ::: 笔记已解锁。
+Nota protetta ::: Protected note ::: Nota protegida ::: 受保护的笔记
+Inserisci la password principale per continuare. ::: Enter your main password to continue. ::: Introduce tu contraseña principal para continuar. ::: 请输入主密码以继续。
+Crea un PIN per questa nota (almeno 4 cifre). ::: Create a PIN for this note (at least 4 digits). ::: Crea un PIN para esta nota (mínimo 4 dígitos). ::: 为此笔记创建 PIN（至少 4 位数字）。
+Crea una password per questa nota (almeno 4 caratteri). ::: Create a password for this note (at least 4 characters). ::: Crea una contraseña para esta nota (mínimo 4 caracteres). ::: 为此笔记创建密码（至少 4 个字符）。
+Usa una password ::: Use a password instead ::: Usar una contraseña ::: 改用密码
+Usa un PIN ::: Use a PIN instead ::: Usar un PIN ::: 改用 PIN
+Il blocco vale solo su questo dispositivo e non è incluso nei backup. ::: The lock only applies on this device and is not included in backups. ::: El bloqueo solo vale en este dispositivo y no se incluye en las copias de seguridad. ::: 此锁仅在本设备上有效，不包含在备份中。
+Il PIN deve avere almeno 4 cifre. ::: The PIN must have at least 4 digits. ::: El PIN debe tener al menos 4 dígitos. ::: PIN 至少需要 4 位数字。
+La password deve avere almeno 4 caratteri. ::: The password must have at least 4 characters. ::: La contraseña debe tener al menos 4 caracteres. ::: 密码至少需要 4 个字符。
+Blocca ::: Lock ::: Bloquear ::: 锁定
+Inserisci il PIN di questa nota. ::: Enter this note's PIN. ::: Introduce el PIN de esta nota. ::: 请输入此笔记的 PIN。
+Inserisci la password di questa nota. ::: Enter this note's password. ::: Introduce la contraseña de esta nota. ::: 请输入此笔记的密码。
+PIN errato. ::: Wrong PIN. ::: PIN incorrecto. ::: PIN 错误。
+Blocco con password ::: Password lock ::: Bloqueo con contraseña ::: 密码锁
+Sempre attivo: l'app è protetta da PIN o impronta, con la password come alternativa ::: Always on: the app is protected by PIN or fingerprint, with the password as fallback ::: Siempre activo: la app está protegida con PIN o huella, con la contraseña como alternativa ::: 始终开启：应用由 PIN 或指纹保护，密码作为备用
+Chiede la password principale ogni volta che l'app viene bloccata ::: Asks for the main password every time the app locks ::: Pide la contraseña principal cada vez que la app se bloquea ::: 每次应用锁定时都要求输入主密码
+Blocco con password attivato. ::: Password lock enabled. ::: Bloqueo con contraseña activado. ::: 密码锁已开启。
+Blocco con password disattivato. ::: Password lock disabled. ::: Bloqueo con contraseña desactivado. ::: 密码锁已关闭。
+Sblocca anche con l'impronta digitale ::: Also unlock with fingerprint ::: Desbloquear también con la huella ::: 同时允许指纹解锁
+Mostra ::: Show ::: Mostrar ::: 显示
+Nascondi ::: Hide ::: Ocultar ::: 隐藏
+Mostra PIN ::: Show PIN ::: Mostrar PIN ::: 显示 PIN
+Nascondi PIN ::: Hide PIN ::: Ocultar PIN ::: 隐藏 PIN
+Nessuna azione ::: No action ::: Ninguna acción ::: 无操作
+Archivia / ripristina ::: Archive / restore ::: Archivar / restaurar ::: 归档 / 恢复
+Aggiungi / rimuovi dai preferiti ::: Add / remove favorite ::: Añadir / quitar de favoritos ::: 添加 / 移除收藏
+Fissa / sblocca in alto ::: Pin / unpin ::: Fijar / desfijar ::: 置顶 / 取消置顶
+Blocca / sblocca nota ::: Lock / unlock note ::: Bloquear / desbloquear nota ::: 锁定 / 解锁笔记
+Scorri verso sinistra ::: Swipe left ::: Deslizar a la izquierda ::: 向左滑动
+Scorri verso destra ::: Swipe right ::: Deslizar a la derecha ::: 向右滑动
 """
 }

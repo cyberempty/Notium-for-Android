@@ -19,6 +19,9 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.activity.compose.BackHandler
+import com.notium.app.data.SwipeAction
+import androidx.compose.material3.Surface
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Animation
 import androidx.compose.material.icons.outlined.Backup
@@ -88,6 +91,7 @@ private sealed interface Dlg {
     data object SetPin : Dlg
     data object DisablePin : Dlg
     data object BackupPassword : Dlg
+    data object PlainBackupWarn : Dlg
     data class RestorePassword(val uri: android.net.Uri) : Dlg
     data object Wipe : Dlg
     data object EmptyTrash : Dlg
@@ -99,15 +103,15 @@ private sealed interface Dlg {
 private enum class Cat(val title: String, val subtitle: String, val icon: androidx.compose.ui.graphics.vector.ImageVector) {
     SECURITY("Sicurezza", "Password, PIN, biometria, blocco automatico", Icons.Outlined.Lock),
     PRIVACY("Privacy", "Anteprime, appunti, informativa", Icons.Outlined.VisibilityOff),
-    BACKUP("Backup", "Crea e ripristina backup cifrati", Icons.Outlined.Backup),
+    BACKUP("Backup", "Crea e ripristina backup, cifrati o non cifrati", Icons.Outlined.Backup),
     THEME("Tema e colori", "Tema, accento, carattere, angoli", Icons.Outlined.Palette),
     ANIM("Animazioni", "Transizioni, velocità, stile", Icons.Outlined.Animation),
     HOME("Schermata principale", "Apertura, colonne, pulsante Nuova nota", Icons.Outlined.Home),
     LIST("Elenco note", "Schede, anteprime, data, tag", Icons.Outlined.ViewList),
     EDITOR("Editor", "Carattere, margini, salvataggio, tastiera", Icons.Outlined.Edit),
     DATA("Gestione dati", "Cestino ed eliminazione dei dati", Icons.Outlined.Storage),
-    ABOUT("Informazioni", "Versione e dettagli", Icons.Outlined.Info),
     LANGUAGE("Lingua", "Scegli la lingua dell'app", Icons.Outlined.Language),
+    ABOUT("Informazioni", "Versione e dettagli", Icons.Outlined.Info),
 }
 
 private fun resettable(c: Cat) = c != Cat.BACKUP && c != Cat.ABOUT && c != Cat.LANGUAGE
@@ -124,7 +128,7 @@ private fun resetCat(c: Cat, s: com.notium.app.data.Settings): com.notium.app.da
             screenPadding = d.screenPadding, homeTitle = d.homeTitle)
         Cat.LIST -> s.copy(listStyle = d.listStyle, cardStyle = d.cardStyle, previewLines = d.previewLines, sort = d.sort, titleLines = d.titleLines,
             listTitleSize = d.listTitleSize, listPreviewSize = d.listPreviewSize, cardPadding = d.cardPadding, boldTitles = d.boldTitles,
-            borderWidth = d.borderWidth, dateStyle = d.dateStyle, showDates = d.showDates, showTags = d.showTags,
+            borderWidth = d.borderWidth, dateStyle = d.dateStyle, swipeLeft = d.swipeLeft, swipeRight = d.swipeRight, showDates = d.showDates, showTags = d.showTags,
             showFolderInList = d.showFolderInList, cardGap = d.cardGap, showPinIcon = d.showPinIcon, showFavIcon = d.showFavIcon)
         Cat.EDITOR -> s.copy(editorFont = d.editorFont, editorFontSize = d.editorFontSize, lineSpacing = d.lineSpacing, editorMargin = d.editorMargin,
             titleSize = d.titleSize, autosaveDelayMs = d.autosaveDelayMs, autoCorrect = d.autoCorrect, autoCapitalize = d.autoCapitalize,
@@ -182,7 +186,12 @@ fun SettingsScreen(vm: AppViewModel, activity: FragmentActivity) {
     val busy by vm.busy.collectAsState()
     var dlg by remember { mutableStateOf<Dlg?>(null) }
     var cat by rememberSaveable { mutableStateOf<Cat?>(null) }
-    BackHandler(enabled = cat != null) { cat = null }
+    // Salva / Annulla: le modifiche si vedono subito, ma restano "in sospeso" finché non vengono confermate.
+    var baseline by remember { mutableStateOf(s) }
+    val dirty = s != baseline
+    var leaveAsk by remember { mutableStateOf(false) }
+    fun leave() { if (dirty) leaveAsk = true else vm.back() }
+    BackHandler(enabled = cat != null || dirty) { if (cat != null) cat = null else leave() }
     var pendingBackupPw by remember { mutableStateOf<CharArray?>(null) }
     val context = LocalContext.current
 
@@ -191,9 +200,23 @@ fun SettingsScreen(vm: AppViewModel, activity: FragmentActivity) {
         val pw = pendingBackupPw; pendingBackupPw = null
         if (uri != null && pw != null) vm.createBackup(uri, pw)
     }
+    val plainLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
+        vm.pickerActive = false
+        if (uri != null) vm.createPlainBackup(uri)
+    }
     val openLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         vm.pickerActive = false
-        if (uri != null) dlg = Dlg.RestorePassword(uri)
+        if (uri != null) vm.startRestore(uri) { dlg = Dlg.RestorePassword(uri) }
+    }
+
+    if (leaveAsk) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { leaveAsk = false },
+            title = { Text("Salvare le modifiche?") },
+            text = { Text("Hai modifiche non salvate alle impostazioni.") },
+            confirmButton = { androidx.compose.material3.TextButton(onClick = { leaveAsk = false; baseline = s; vm.flushSettings(); vm.back() }) { Text("Salva") } },
+            dismissButton = { androidx.compose.material3.TextButton(onClick = { leaveAsk = false; val b = baseline; vm.updateSettings { b }; vm.back() }) { Text("Annulla modifiche") } },
+        )
     }
 
     Scaffold(
@@ -201,12 +224,30 @@ fun SettingsScreen(vm: AppViewModel, activity: FragmentActivity) {
         topBar = {
             TopAppBar(
                 title = { Text(cat?.title ?: "Impostazioni") },
-                navigationIcon = { IconButton(onClick = { if (cat != null) cat = null else vm.back() }) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "Indietro") } },
+                navigationIcon = { IconButton(onClick = { if (cat != null) cat = null else leave() }) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "Indietro") } },
                 actions = {
                     val cc = cat
                     if (cc != null && resettable(cc)) IconButton(onClick = { dlg = Dlg.ResetCat(cc) }) { Icon(Icons.Outlined.RestartAlt, "Ripristina predefiniti") }
                 },
             )
+        },
+        bottomBar = {
+            androidx.compose.animation.AnimatedVisibility(
+                visible = dirty,
+                enter = androidx.compose.animation.slideInVertically { it } + androidx.compose.animation.fadeIn(),
+                exit = androidx.compose.animation.slideOutVertically { it } + androidx.compose.animation.fadeOut(),
+            ) {
+                Surface(tonalElevation = 6.dp, shadowElevation = 8.dp, color = MaterialTheme.colorScheme.surfaceContainerHigh) {
+                    Row(
+                        Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        Text("Modifiche non salvate", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                        androidx.compose.material3.OutlinedButton(onClick = { val b = baseline; vm.updateSettings { b } }) { Text("Annulla") }
+                        androidx.compose.material3.Button(onClick = { baseline = s; vm.flushSettings() }) { Text("Salva") }
+                    }
+                }
+            }
         },
     ) { padding ->
         Column(Modifier.padding(padding).verticalScroll(rememberScrollState())) {
@@ -265,6 +306,11 @@ fun SettingsScreen(vm: AppViewModel, activity: FragmentActivity) {
                 900 -> "Dopo 15 minuti"; else -> "Mai (finché l'app resta in memoria)"
             }, listOf("Subito" to 0, "Dopo 30 secondi" to 30, "Dopo 1 minuto" to 60, "Dopo 5 minuti" to 300,
                 "Dopo 15 minuti" to 900, "Mai (finché l'app resta in memoria)" to -1)) { v -> vm.updateSettings { it.copy(autoLockSeconds = v) } }
+            SwitchItem(
+                "Blocco con password", if (opts.pinEnabled || opts.biometricEnabled) "Sempre attivo: l'app è protetta da PIN o impronta, con la password come alternativa"
+                else "Chiede la password principale ogni volta che l'app viene bloccata",
+                opts.passwordLock || opts.pinEnabled || opts.biometricEnabled, enabled = !opts.pinEnabled && !opts.biometricEnabled
+            ) { on -> vm.setPasswordLock(on) }
             SwitchItem("Tastierino PIN casuale", "Cambia la posizione dei numeri a ogni sblocco", s.shuffleKeypad) { v -> vm.updateSettings { it.copy(shuffleKeypad = v) } }
             SwitchItem("Vibrazione sui tasti del PIN", null, s.haptics) { v -> vm.updateSettings { it.copy(haptics = v) } }
                     }
@@ -279,7 +325,8 @@ fun SettingsScreen(vm: AppViewModel, activity: FragmentActivity) {
                     }
                     Cat.BACKUP -> {
             Item("Crea backup cifrato", "File .notium protetto da una password indipendente (AES-256-GCM + Argon2id)") { dlg = Dlg.BackupPassword }
-            Item("Importa backup", "Sostituisce tutte le note con quelle del file. Prima verifica integrità e firma.") {
+            Item("Crea backup non cifrato", "File .json leggibile da chiunque lo possieda: le note sono in chiaro") { dlg = Dlg.PlainBackupWarn }
+            Item("Importa backup", "Sostituisce tutte le note con quelle del file (cifrato o non cifrato). Prima verifica integrità e firma.") {
                 vm.pickerActive = true
                 openLauncher.launch(arrayOf("*/*"))
             }
@@ -336,6 +383,8 @@ fun SettingsScreen(vm: AppViewModel, activity: FragmentActivity) {
             SwitchItem("Titoli in grassetto", null, s.boldTitles) { v -> vm.updateSettings { it.copy(boldTitles = v) } }
             SliderItem("Spessore dei bordi", s.borderWidth.toFloat(), 0f..3f, { "${it.toInt()} dp" }) { v -> vm.updateSettings { it.copy(borderWidth = v.toInt()) } }
             Choice("Formato della data", s.dateStyle.label, DateStyle.entries.map { it.label to it }) { v -> vm.updateSettings { it.copy(dateStyle = v) } }
+            Choice("Scorri verso sinistra", s.swipeLeft.label, SwipeAction.entries.map { it.label to it }) { v -> vm.updateSettings { it.copy(swipeLeft = v) } }
+            Choice("Scorri verso destra", s.swipeRight.label, SwipeAction.entries.map { it.label to it }) { v -> vm.updateSettings { it.copy(swipeRight = v) } }
             SwitchItem("Mostra la data", null, s.showDates) { v -> vm.updateSettings { it.copy(showDates = v) } }
             SwitchItem("Mostra i tag", null, s.showTags) { v -> vm.updateSettings { it.copy(showTags = v) } }
             SwitchItem("Mostra la cartella", null, s.showFolderInList) { v -> vm.updateSettings { it.copy(showFolderInList = v) } }
@@ -372,7 +421,12 @@ fun SettingsScreen(vm: AppViewModel, activity: FragmentActivity) {
             Item("Elimina tutti i dati", "Cancella note, chiavi e preferenze da questo dispositivo", danger = true) { dlg = Dlg.Wipe }
                     }
                     Cat.ABOUT -> {
-            Item("Notium 1.0.0", "Your notes. Your privacy. · 100% offline · Android 8.0+") {}
+            Item("Notium 1.0.0", "Le tue note. La tua privacy. · 100% offline · Android 8.0+") {}
+            Item("Cos'è Notium", "Un'app per appunti pensata per la riservatezza: scrivi, organizza e ritrova le tue note senza che nulla lasci il dispositivo.") {}
+            Item("Nessuna connessione", "Non richiede internet, non ha account, pubblicità, statistiche né servizi di tracciamento.") {}
+            Item("Cifratura", "Il database è cifrato con SQLCipher; le chiavi sono protette da Argon2id, AES-256-GCM e dal Keystore di Android.") {}
+            Item("Accesso", "Proteggi l'app con password, PIN e impronta digitale. Se dimentichi la password, i dati non sono recuperabili.") {}
+            Item("Backup", "Esporta e ripristina le tue note con un backup cifrato o non cifrato, sempre sotto il tuo controllo.") {}
                     }
                     Cat.LANGUAGE -> {
             listOf(com.notium.app.data.AppLang.EN, com.notium.app.data.AppLang.ES, com.notium.app.data.AppLang.IT, com.notium.app.data.AppLang.ZH).forEach { l ->
@@ -414,6 +468,17 @@ fun SettingsScreen(vm: AppViewModel, activity: FragmentActivity) {
             val stamp = SimpleDateFormat("yyyyMMdd-HHmm", Locale.ROOT).format(Date())
             createLauncher.launch("Notium-backup-$stamp.notium")
         }
+        Dlg.PlainBackupWarn -> ConfirmDialog(
+            "Creare un backup non cifrato?",
+            "Il file conterrà tutte le tue note in chiaro, senza password. Conservalo solo in un posto di cui ti fidi.",
+            "Crea backup", danger = true, onDismiss = { dlg = null },
+            onConfirm = {
+                dlg = null
+                vm.pickerActive = true
+                val stamp = SimpleDateFormat("yyyyMMdd-HHmm", Locale.ROOT).format(Date())
+                plainLauncher.launch("Notium-backup-$stamp.json")
+            }
+        )
         is Dlg.RestorePassword -> PasswordPromptDialog("Password del backup", "Inserisci la password usata quando hai creato il backup.",
             "Verifica", { dlg = null }) { vm.prepareRestore(d.uri, it); dlg = null }
         Dlg.Wipe -> WipeDialog({ dlg = null }) { vm.wipeEverything(it); dlg = null }
@@ -549,24 +614,7 @@ private fun SliderItem(
 private fun ColorItem(title: String, current: Int, choices: List<Pair<String, Int>>, zeroColor: androidx.compose.ui.graphics.Color, onSelect: (Int) -> Unit) {
     var hexDialog by remember { mutableStateOf(false) }
     val custom = choices.none { it.second == current }
-    if (hexDialog) {
-        var hex by remember { mutableStateOf(if (custom) String.format("%06X", current and 0xFFFFFF) else "") }
-        val parsed = hex.takeIf { it.length == 6 }?.toIntOrNull(16)
-        AlertDialog(
-            onDismissRequest = { hexDialog = false }, title = { Text("Colore personalizzato") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("Inserisci un colore esadecimale a 6 cifre (ad esempio 7FA6D9).")
-                    OutlinedTextField(hex, { v -> if (v.length <= 6 && v.all { it.isLetterOrDigit() }) hex = v.uppercase() },
-                        label = { Text("#RRGGBB") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                    if (parsed != null) Box(Modifier.size(40.dp).clip(androidx.compose.foundation.shape.CircleShape)
-                        .background(androidx.compose.ui.graphics.Color(0xFF000000.toInt() or parsed)))
-                }
-            },
-            confirmButton = { TextButton(enabled = parsed != null, onClick = { onSelect(0xFF000000.toInt() or parsed!!); hexDialog = false }) { Text("Applica") } },
-            dismissButton = { TextButton(onClick = { hexDialog = false }) { Text("Annulla") } },
-        )
-    }
+    if (hexDialog) ColorPickerDialog(if (custom) current else null, { hexDialog = false }) { c -> onSelect(c); hexDialog = false }
     Column(Modifier.padding(horizontal = 20.dp, vertical = 10.dp)) {
         Text(title, style = MaterialTheme.typography.bodyLarge)
         Text(choices.firstOrNull { it.second == current }?.first ?: "Personalizzato",
@@ -678,16 +726,14 @@ private fun PinDialog(onDismiss: () -> Unit, onConfirm: (CharArray) -> Unit) {
     var a by remember { mutableStateOf("") }
     var b by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
-    val kb = KeyboardOptions(keyboardType = KeyboardType.NumberPassword)
+    var show by remember { mutableStateOf(false) }
     AlertDialog(
         onDismissRequest = onDismiss, title = { Text("PIN di sblocco rapido") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Da 6 a 12 cifre. Non può sostituire la password: serve solo a sbloccare più in fretta.")
-                OutlinedTextField(a, { if (it.length <= 12 && it.all(Char::isDigit)) { a = it; error = null } }, label = { Text("PIN") },
-                    singleLine = true, visualTransformation = PasswordVisualTransformation(), keyboardOptions = kb, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(b, { if (it.length <= 12 && it.all(Char::isDigit)) { b = it; error = null } }, label = { Text("Conferma PIN") },
-                    singleLine = true, visualTransformation = PasswordVisualTransformation(), keyboardOptions = kb, modifier = Modifier.fillMaxWidth())
+                SecretField(a, { if (it.length <= 12 && it.all(Char::isDigit)) { a = it; error = null } }, "PIN", show, { show = !show }, numeric = true)
+                SecretField(b, { if (it.length <= 12 && it.all(Char::isDigit)) { b = it; error = null } }, "Conferma PIN", show, { show = !show }, numeric = true)
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             }
         },

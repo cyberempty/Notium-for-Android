@@ -2,6 +2,7 @@ package com.notium.app.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,6 +24,9 @@ import androidx.compose.material.icons.automirrored.outlined.Backspace
 import androidx.compose.material.icons.outlined.Fingerprint
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material3.Button
+import androidx.compose.ui.unit.sp
+import androidx.compose.material.icons.outlined.VisibilityOff
+import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material.icons.outlined.FileDownload
 import androidx.compose.material3.CircularProgressIndicator
@@ -158,7 +162,7 @@ fun SetupScreen(vm: AppViewModel) {
     var askBackupPw by remember { mutableStateOf<android.net.Uri?>(null) }
     val pickBackup = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.OpenDocument()) { uri ->
         vm.pickerActive = false
-        if (uri != null) askBackupPw = uri
+        if (uri != null) vm.startRestore(uri) { askBackupPw = uri }
     }
 
     fun submit() {
@@ -337,8 +341,16 @@ fun LockScreen(vm: AppViewModel, onBiometric: () -> Unit) {
 
             Entrance(2) { Column(Modifier.graphicsLayer { translationX = shake.value }, horizontalAlignment = Alignment.CenterHorizontally) {
             if (!usePassword && options.pinEnabled) {
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.height(24.dp), verticalAlignment = Alignment.CenterVertically) {
-                    repeat(if (options.pinLen > 0) options.pinLen else maxOf(6, pin.length)) { i -> PinDot(i < pin.length) }
+                var pinShown by remember { mutableStateOf(false) } // occhio: mostra le cifre digitate
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Spacer(Modifier.size(40.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.height(24.dp), verticalAlignment = Alignment.CenterVertically) {
+                        if (pinShown && pin.isNotEmpty()) Text(pin, style = MaterialTheme.typography.titleLarge, letterSpacing = 6.sp)
+                        else repeat(if (options.pinLen > 0) options.pinLen else maxOf(6, pin.length)) { i -> PinDot(i < pin.length) }
+                    }
+                    IconButton(onClick = { pinShown = !pinShown }, Modifier.size(40.dp)) {
+                        Icon(if (pinShown) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility, if (pinShown) "Nascondi PIN" else "Mostra PIN")
+                    }
                 }
                 Spacer(Modifier.height(16.dp))
                 Keypad(
@@ -347,6 +359,7 @@ fun LockScreen(vm: AppViewModel, onBiometric: () -> Unit) {
                     showBiometric = options.biometricEnabled,
                     onDigit = { if (pin.length <= maxPin - 1) pin += it },
                     onBackspace = { pin = pin.dropLast(1) },
+                    onClear = { pin = "" },
                     onBiometric = onBiometric,
                 )
                 Button(
@@ -394,10 +407,11 @@ fun LockScreen(vm: AppViewModel, onBiometric: () -> Unit) {
     }
 }
 
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 private fun Keypad(
     digits: List<String>, haptics: Boolean, enabled: Boolean, showBiometric: Boolean,
-    onDigit: (String) -> Unit, onBackspace: () -> Unit, onBiometric: () -> Unit,
+    onDigit: (String) -> Unit, onBackspace: () -> Unit, onClear: () -> Unit, onBiometric: () -> Unit,
 ) {
     val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
     val tap: () -> Unit = { if (haptics) haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress) }
@@ -409,7 +423,9 @@ private fun Keypad(
             if (showBiometric) IconKey(enabled, onBiometric) else Box(Modifier.size(72.dp))
             Key(digits[9], enabled) { tap(); onDigit(digits[9]) }
             Box(
-                Modifier.size(72.dp).clip(CircleShape).clickable(enabled = enabled) { tap(); onBackspace() },
+                Modifier.size(72.dp).clip(CircleShape).combinedClickable(
+                    enabled = enabled, onClick = { tap(); onBackspace() }, onLongClick = { tap(); onClear() }
+                ),
                 contentAlignment = Alignment.Center
             ) { Icon(Icons.AutoMirrored.Outlined.Backspace, "Cancella") }
         }

@@ -1,7 +1,8 @@
 ﻿# ======================================================================================
 #  NOTIUM BUILD SYSTEM
 #  Builds "src" and produces Notium-android-APK\Notium.apk
-#  Portable: everything needed is downloaded into build-tools\tools
+#  Portable: everything needed is downloaded into build-tools\tools the first time and
+#  reused afterwards (later builds also work without internet while that folder is kept).
 # ======================================================================================
 $ErrorActionPreference = 'Stop'
 $ProgressPreference    = 'SilentlyContinue'
@@ -30,6 +31,8 @@ $script:T0 = Get-Date
 $script:Percent = 0.0
 $script:PhaseNo = 0
 $script:PhaseNames = @('Checking environment', 'JDK 17 (Temurin)', 'Android command-line tools', 'Android SDK 35 and build-tools', 'Compiling and optimizing (R8)', 'Finalizing')
+$ACC = "$ESC[96m"; $FILLC = [string][char]0x2588; $EMPTYC = [string][char]0x2591
+if (Test-Path $marker) { $subtitle = 'components already present: no network needed' } else { $subtitle = 'first build: internet connection required' }
 $script:PhaseW    = @(3, 10, 4, 15, 60, 8)
 $script:PhaseBase = @(0, 3, 13, 17, 32, 92)
 $script:Status = ''
@@ -76,10 +79,10 @@ function Draw-Header {
     $pct = [int][Math]::Floor($script:Percent)
     $barW = [Math]::Max(20, $w - 30)
     $filled = [int][Math]::Floor($barW * $script:Percent / 100)
-    $bar = ('█' * $filled) + ('░' * ($barW - $filled))
+    $bar = ($FILLC * $filled) + ($EMPTYC * ($barW - $filled))
     $spin = @('|', '/', '-', '\')[$script:Spin % 4]
     if ($script:PhaseNo -gt 0) { $phase = ('{0}/{1}   {2}' -f $script:PhaseNo, 6, $script:PhaseNames[$script:PhaseNo - 1]) } else { $phase = 'Starting' }
-    $title = Fit ' NOTIUM  BUILD SYSTEM' ($w - 10)
+    $title = Fit (' NOTIUM  BUILD SYSTEM   ' + $subtitle) ($w - 10)
     $ver = ('v' + $APP_VERSION + ' ')
     Put-Row 1 ($BOLD + $WHITE + $title.PadRight($w - $ver.Length) + $ver + $R)
     Put-Row 2 ($DIM + ('─' * $w) + $R)
@@ -87,7 +90,7 @@ function Draw-Header {
     Put-Row 4 (' ' + $DIM + 'Mode        ' + $R + (Fit $script:Mode ($w - 16)))
     Put-Row 5 (' ' + $DIM + 'Phase       ' + $R + (Fit $phase ($w - 16)))
     Put-Row 6 (' ' + $DIM + 'Status      ' + $R + (Fit $script:Status ($w - 16)))
-    Put-Row 7 (' ' + "$ESC[36m" + $bar + $R + ('  {0,3}%   ' -f $pct) + $DIM + (Get-Elapsed) + $R + '   ' + $spin)
+    Put-Row 7 (' ' + $ACC + $bar + $R + ('  {0,3}%   ' -f $pct) + $DIM + (Get-Elapsed) + $R + '   ' + $spin)
     Put-Row 8 ($DIM + ('─' * $w) + $R)
 }
 
@@ -101,6 +104,7 @@ function Start-UI {
     } else {
         Write-Host ''
         Write-Host ' NOTIUM  BUILD SYSTEM' -ForegroundColor White
+        Write-Host (' ' + $subtitle) -ForegroundColor Cyan
         Write-Host (' ' + ('-' * 60)) -ForegroundColor DarkGray
     }
 }
@@ -258,10 +262,10 @@ try {
     if ($main -match '\\Temp\\' -or $main -match '\.zip') { Log 'WARN' 'The project seems to be running from inside an archive: extract the zip into a normal folder first.' }
     New-Item -ItemType Directory -Force -Path $tools, $signDir | Out-Null
     $offline = Test-Path $marker
-    if ($offline) { $script:Mode = 'Offline  (components already present in build-tools\tools)' } else { $script:Mode = 'Online  (first build: downloading components)' }
+    if ($offline) { $script:Mode = 'Components already present (no download needed)' } else { $script:Mode = 'First build: downloading components' }
     if (Test-Path $estFile) { $v = 0; if ([int]::TryParse((Get-Content $estFile -Raw).Trim(), [ref]$v) -and $v -gt 20) { $script:TaskEstimate = $v } }
     Log 'INFO' ('Project       {0}' -f $pdir)
-    Log 'INFO' ('Components    {0}' -f $tools)
+    Log 'INFO' ('Resources     {0}' -f $tools)
     Log 'INFO' ('Mode          {0}' -f $script:Mode)
     End-Phase
 
@@ -365,7 +369,7 @@ try {
         }
     }
     $gargs = @('assembleRelease', '--parallel', '--build-cache', '--console=plain')
-    if ($offline) { $gargs += '--offline'; Log 'INFO' 'Gradle in offline mode' } else { Log 'INFO' 'Gradle: downloading Gradle and libraries on first run' }
+    if ($offline) { $gargs += '--offline'; Log 'INFO' 'Gradle without network access (--offline)' } else { Log 'INFO' 'Gradle: downloading Gradle and libraries when missing' }
     Log 'INFO' 'Starting release build (optimized with R8)'
     $code = Invoke-Streamed $gradle $gargs $pdir $onGradle ''
     if ($code -ne 0 -and $offline -and $script:Errors.Count -eq 0) {
@@ -419,7 +423,7 @@ try {
     Write-Host '  Copy Notium.apk to your phone and open it. If a version signed with a different key is already installed,'
     Write-Host '  uninstall it first (Android does not allow overwriting an app signed with a different key).'
     Write-Host ''
-    $ans = Read-Host '  Delete the downloaded components in build-tools\tools (about 3 GB)? If you keep them, future builds also work offline  [y/N]'
+    $ans = Read-Host '  Delete the downloaded components in build-tools\tools (about 3 GB)? They are reused by the next builds  [y/N]'
     if ($ans -match '^[yY]') { Remove-Item $tools -Recurse -Force -ErrorAction SilentlyContinue; Write-Host '  build-tools\tools deleted.' }
     try { Start-Process explorer.exe ('/select,"' + $final + '"') } catch { }
 }

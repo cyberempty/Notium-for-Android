@@ -157,16 +157,16 @@ The most important functions and where they live (package `com.notium.app`).
 
 ## Installation (building the APK)
 
-You build the APK on your own computer. Nothing is installed system-wide: the build tools are downloaded into `build-tools/tools`.
+The package contains **no build resources**. When you build, the JDK, the Android SDK, Gradle and all libraries are **downloaded from the internet** (about 3 GB the first time).
 
 ### Requirements
-- Windows, Linux (x86-64), or macOS
-- An internet connection for the first build, and about 3 GB of free disk space
-- About 5 to 15 minutes for the first build
+- Windows, Linux (x86-64) or macOS
+- An internet connection during the build (components are downloaded when missing)
+- About 3 GB of free disk space and 5 to 15 minutes for the first build
 
 ### Steps
 1. Extract the whole `Notium-android` folder somewhere normal (not from inside the zip).
-2. Run the build script for your system:
+2. Open the `Notium-android` folder and run the script for your system:
 
 | System | Script |
 |---|---|
@@ -179,25 +179,25 @@ If the scripts are not executable on Linux or macOS:
 chmod +x Build-Notium-android.sh Build-Notium-android.command build-tools/build-engine.sh src/gradlew
 ```
 
-3. The first run downloads JDK 17, the Android command-line tools, Android SDK 35, build-tools 34, Gradle, and the libraries. The terminal shows the progress.
-4. When the build finishes, the APK is here, next to the `Notium-android` folder:
-
+3. The terminal shows a cyan progress bar and the download steps.
+4. When it ends, the APK is in the `Notium-android-APK` folder, next to the `Notium-android` folder:
 ```
 Notium-android-APK/Notium.apk
 ```
-
 5. Copy `Notium.apk` to your phone and open it. Allow "Install from unknown sources" when Android asks.
 
-At the end you are asked whether to delete the downloaded tools. If you keep them, later builds also work **offline**.
+### What is downloaded and where
+Everything goes into `build-tools/tools` (inside this folder): Eclipse Temurin JDK 17, Android command-line tools, Android SDK platform 35, build-tools 34.0.0, Gradle and the app libraries. Later builds reuse it and only download what is missing. On Windows you are asked at the end whether to delete it; on Linux and macOS you can delete the folder yourself.
 
 ### Updating the app
-The APK is signed with a local key stored in `build-tools/signing`. Keep that folder: with the same key you can install a new version over the old one without losing your notes. If you lose it, uninstall the old app first (this deletes its data, so export a backup before).
+The APK is signed with a local key in `build-tools/signing`. Keep that folder: with the same key a new version installs over the old one without losing notes.
 
-### Building with Android Studio (optional)
-Open the `src` folder in Android Studio, then *Build > Build APK(s)*. Or from a terminal in `src`:
-```bash
-./gradlew assembleRelease
-```
+### Problems
+| Problem | What to do |
+|---|---|
+| Download failed | Check the internet connection (and any proxy or firewall) and run the script again |
+| Compilation error | Read the red lines in the terminal or open `build-tools/build.log` and send them to the developer |
+| Android refuses the APK | Allow unknown sources; if an older version with a different key is installed, uninstall it first |
 
 ---
 
@@ -259,7 +259,7 @@ Install the APK, choose the language, tap "Import a backup", pick the `.notium` 
 | Argon2Kt | 1.6.0 | Argon2id key derivation |
 | AndroidX ProfileInstaller | 1.4.1 | Faster startup |
 
-Build tools downloaded automatically: Eclipse Temurin JDK 17, Android SDK platform 35, Android build-tools 34.0.0, Android command-line tools.
+Build tools (downloaded at build time into `build-tools/tools`): Eclipse Temurin JDK 17, Android SDK platform 35, Android build-tools 34.0.0, Android command-line tools.
 
 ---
 
@@ -267,13 +267,12 @@ Build tools downloaded automatically: Eclipse Temurin JDK 17, Android SDK platfo
 
 ```
 Notium-android/
-├── README.md                       this file
-├── Build-Notium-android.bat        build script for Windows
-├── Build-Notium-android.sh         build script for Linux
-├── Build-Notium-android.command    build script for macOS
-├── build-tools/                    build engine (build-engine.ps1 / build-engine.sh),
-│                                   signing key, downloaded tools, build.log
-└── src/                            complete source code (Gradle project)
+├── README.md                          this file
+├── Build-Notium-android.bat           build script for Windows
+├── Build-Notium-android.sh            build script for Linux
+├── Build-Notium-android.command       build script for macOS
+├── build-tools/                       build engine, signing key, tools downloaded at build time
+└── src/                               complete source code (Gradle project)
     └── app/src/main/java/com/notium/app/
         ├── MainActivity.kt, NotiumApp.kt, AppViewModel.kt
         ├── backup/      encrypted backup format
@@ -300,7 +299,7 @@ Notium-android/
 
 | Problem | What to do |
 |---|---|
-| The build fails | Read the red error lines in the terminal, or open `build-tools/build.log`, and send them to the developer |
+| The build fails | Read the red error lines in the terminal, or open `build-tools/build.log` , and send them to the developer |
 | The build cannot download files | Check the internet connection and run the script again |
 | Android refuses to install the APK | Allow installation from unknown sources. If an older version signed with a different key is installed, uninstall it first |
 | The app closes at start | A crash report screen appears at the next start: copy the text and send it |

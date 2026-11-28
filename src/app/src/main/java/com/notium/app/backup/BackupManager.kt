@@ -54,6 +54,24 @@ object BackupManager {
         return header + sealed
     }
 
+    /** Backup NON cifrato: JSON in chiaro (UTF-8). Chiunque abbia il file puo' leggere le note. */
+    fun plain(data: BackupData): ByteArray = toJson(data).toString().toByteArray(Charsets.UTF_8)
+
+    fun isPlain(file: ByteArray): Boolean {
+        var i = 0
+        if (file.size >= 3 && file[0] == 0xEF.toByte() && file[1] == 0xBB.toByte() && file[2] == 0xBF.toByte()) i = 3
+        while (i < file.size && file[i].toInt().toChar().isWhitespace()) i++
+        return i < file.size && file[i] == '{'.code.toByte()
+    }
+
+    fun readPlain(file: ByteArray): BackupData = try {
+        fromJson(JSONObject(String(file, Charsets.UTF_8).removePrefix("\uFEFF")))
+    } catch (e: BackupException) {
+        throw e
+    } catch (e: Exception) {
+        throw BackupException(BackupException.Kind.NOT_A_BACKUP, "File non riconosciuto")
+    }
+
     fun decrypt(file: ByteArray, password: CharArray): BackupData {
         if (file.size < HEADER_LEN + Crypto.IV_LEN + 16 || !file.copyOfRange(0, 8).contentEquals(MAGIC)) {
             throw BackupException(BackupException.Kind.NOT_A_BACKUP, "File non riconosciuto")

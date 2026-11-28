@@ -1,5 +1,7 @@
 package com.notium.app.ui
 
+import androidx.compose.material.icons.outlined.LockOpen
+import androidx.compose.material.icons.outlined.Lock
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material.icons.automirrored.outlined.Redo
@@ -291,6 +293,12 @@ fun EditorScreen(vm: AppViewModel) {
                                     SecureClipboard.copy(context, body.text, settings.clearClipboard)
                                     vm.notify(if (settings.clearClipboard) "Copiato. Gli appunti si svuotano dopo 60 secondi." else "Copiato.")
                                 })
+                            e.noteId?.let { nid ->
+                                val locked = nid in settings.lockedNotes
+                                DropdownMenuItem(text = { Text(if (locked) "Sblocca nota" else "Blocca nota") },
+                                    leadingIcon = { Icon(if (locked) Icons.Outlined.LockOpen else Icons.Outlined.Lock, null) },
+                                    onClick = { menu = false; vm.toggleNoteLock(nid) })
+                            }
                             DropdownMenuItem(text = { Text("Cerca nella nota") }, leadingIcon = { Icon(Icons.Outlined.Search, null) },
                                 onClick = { menu = false; findOpen = true })
                             DropdownMenuItem(text = { Text("Condividi testo") }, leadingIcon = { Icon(Icons.Outlined.Share, null) },
@@ -299,7 +307,7 @@ fun EditorScreen(vm: AppViewModel) {
                                     val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
                                         type = "text/plain"
                                         putExtra(android.content.Intent.EXTRA_SUBJECT, title.text)
-                                        putExtra(android.content.Intent.EXTRA_TEXT, (if (title.text.isNotBlank()) title.text.trim() + "\n\n" else "") + body.text)
+                                        putExtra(android.content.Intent.EXTRA_TEXT, (if (title.text.isNotBlank()) title.text.trim() + "\n\n" else "") + body.text + "\n\nwritten with Notium for Android")
                                     }
                                     vm.pickerActive = true
                                     shareLauncher.launch(android.content.Intent.createChooser(send, I18n.tr("Condividi nota", settings.language)))
@@ -314,7 +322,7 @@ fun EditorScreen(vm: AppViewModel) {
                                 DropdownMenuItem(text = { Text(if (e.archived) "Ripristina dall'archivio" else "Archivia") },
                                     leadingIcon = { Icon(if (e.archived) Icons.Outlined.Unarchive else Icons.Outlined.Archive, null) },
                                     onClick = { menu = false; vm.editorToggleArchived() })
-                                DropdownMenuItem(text = { Text("Sposta nel cestino") }, leadingIcon = { Icon(Icons.Outlined.Delete, null) },
+                                DropdownMenuItem(text = { Text("Sposta nel cestino", color = MaterialTheme.colorScheme.error) }, leadingIcon = { Icon(Icons.Outlined.Delete, null, tint = MaterialTheme.colorScheme.error) },
                                     onClick = { menu = false; vm.editorTrash() })
                             }
                             ExportEntry { exportSub = true }
@@ -393,6 +401,23 @@ fun EditorScreen(vm: AppViewModel) {
     ) { padding ->
         var viewportPx by remember { mutableStateOf(0) }
         val density = androidx.compose.ui.platform.LocalDensity.current
+        // Scrittura di testi lunghi: mantiene sempre dello spazio libero sotto il cursore.
+        val cursorEnd = body.tf.selection.end
+        val textLen = body.text.length
+        LaunchedEffect(cursorEnd, textLen, layoutRes, viewportPx) {
+            val lr = layoutRes ?: return@LaunchedEffect
+            if (viewportPx <= 0 || readOnly) return@LaunchedEffect
+            val off = cursorEnd.coerceIn(0, lr.layoutInput.text.length)
+            val bottom = bodyTopPx + with(density) { 16.dp.toPx() } + lr.getCursorRect(off).bottom
+            val margin = with(density) { 140.dp.toPx() }
+            val visibleBottom = scroll.value + viewportPx
+            if (bottom + margin > visibleBottom) {
+                scroll.animateScrollTo((bottom + margin - viewportPx).toInt().coerceAtLeast(0))
+            } else {
+                val top = bodyTopPx + with(density) { 16.dp.toPx() } + lr.getCursorRect(off).top
+                if (top < scroll.value) scroll.animateScrollTo((top - margin / 2).toInt().coerceAtLeast(0))
+            }
+        }
         Column(Modifier.padding(padding).fillMaxSize().onSizeChanged { viewportPx = it.height }.verticalScroll(scroll).padding(horizontal = settings.editorMargin.dp)) {
             BasicTextField(
                 value = title, onValueChange = { push(t = it) }, readOnly = readOnly, keyboardOptions = kbOpts,

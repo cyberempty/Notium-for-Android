@@ -1,5 +1,7 @@
 package com.notium.app
 
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.animation.togetherWith
 
 import android.os.Bundle
@@ -73,7 +75,7 @@ class MainActivity : FragmentActivity() {
             }
             LaunchedEffect(settings.language) { java.util.Locale.setDefault(I18n.locale(settings.language)) }
             CompositionLocalProvider(LocalLang provides settings.language) {
-                NotiumTheme(settings) { Root() }
+                NotiumTheme(settings) { Root(); NoteLockHost() }
             }
         }
     }
@@ -209,6 +211,15 @@ class MainActivity : FragmentActivity() {
         }
     }
 
+    /** Finestra per creare o verificare il PIN/password di una singola nota. */
+    @Composable
+    private fun NoteLockHost() {
+        val req by vm.noteLockRequest.collectAsState()
+        val lang = vm.settings.collectAsState().value.language
+        val r = req ?: return
+        com.notium.app.ui.NoteLockDialog(vm, this@MainActivity, r, lang)
+    }
+
     private fun promptBiometricUnlock() {
         val cipher = vm.biometricUnlockCipher() ?: return
         val lang = vm.settings.value.language
@@ -223,6 +234,8 @@ class MainActivity : FragmentActivity() {
         super.onStop()
         if (isChangingConfigurations || vm.auth.value != AuthState.Unlocked) return
         vm.flushBlocking() // salva l'editor prima di lasciare il primo piano
+        vm.flushSettings()
+        vm.relockNotes()
         if (vm.pickerActive) return
         stoppedAt = SystemClock.elapsedRealtime()
         if (vm.settings.value.autoLockSeconds == 0) vm.lock()

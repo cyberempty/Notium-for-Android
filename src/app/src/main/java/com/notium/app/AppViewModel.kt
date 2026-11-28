@@ -26,6 +26,7 @@ import com.notium.app.security.BiometricHelper
 import com.notium.app.security.Crypto
 import com.notium.app.security.PinResult
 import com.notium.app.security.VaultManager
+import com.notium.app.security.toUtf8Bytes
 import com.notium.app.security.wipe
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -80,11 +81,15 @@ class UiMessage(val text: String, val undo: (() -> Unit)? = null)
 
 data class AuthOptions(
     val pinEnabled: Boolean = false, val biometricEnabled: Boolean = false, val biometricAvailable: Boolean = false,
-    val pinLen: Int = 0, val pwLen: Int = 0,
+    val pinLen: Int = 0, val pwLen: Int = 0, val passwordLock: Boolean = false,
 )
 
 /** Conferma mostrata nella home dopo un backup importato al primo avvio. */
 data class ImportBanner(val notes: Int, val folders: Int, val tags: Int)
+
+/** Richiesta di sbloccare una nota protetta: apertura ([remove]=false) oppure rimozione del blocco. */
+enum class NoteLockMode { CREATE, OPEN, REMOVE }
+data class NoteLockRequest(val noteId: Long, val mode: NoteLockMode)
 
 data class RestorePreview(val data: BackupData) {
     val notes get() = data.notes.size
@@ -101,6 +106,8 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
     private val _settings = MutableStateFlow(Settings())
     val settings: StateFlow<Settings> = _settings.asStateFlow()
     private var persistJob: Job? = null
+    private var baseRaw: String? = null
+    private var baseMd: String? = null
 
     val settingsLoaded = MutableStateFlow(false)
 
@@ -153,7 +160,7 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
     private fun syncAutoUnlock() {
         val m = master ?: return
         runCatching {
-            if (!vault.isPinEnabled() && !vault.isBiometricEnabled()) {
+            if (!vault.isPinEnabled() && !vault.isBiometricEnabled() && !vault.isPasswordLockEnabled()) {
                 if (!vault.hasAutoUnlock()) vault.enableAutoUnlock(m)
             } else vault.disableAutoUnlock()
         }
@@ -164,7 +171,7 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
     private fun refreshAuthOptions() {
         _authOptions.value = if (vault.exists()) AuthOptions(
             vault.isPinEnabled(), vault.isBiometricEnabled(), BiometricHelper.isAvailable(app),
-            vault.pinLength(), vault.passwordLength(),
+            vault.pinLength(), vault.passwordLength(), vault.isPasswordLockEnabled(),
         ) else AuthOptions(biometricAvailable = BiometricHelper.isAvailable(app))
     }
 
@@ -210,9 +217,17 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
         _settings.value = s
         persistJob?.cancel()
         persistJob = viewModelScope.launch {
-            delay(250)
+            delay(150)
             prefs.update({ s }, s)
         }
+    }
+
+    /** Scrive subito le impostazioni in sospeso (chiamata quando l'app lascia il primo piano). */
+    fun flushSettings() {
+        if (persistJob?.isActive != true) return
+        persistJob?.cancel()
+        val s = _settings.value
+        kotlinx.coroutines.runBlocking { runCatching { prefs.update({ s }, s) } }
     }
 
     // ----------------------------------------------------------------- autenticazione
@@ -325,6 +340,8 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
         if (_auth.value != AuthState.Unlocked) return
         if (vault.hasAutoUnlock()) return // nessun PIN/impronta: niente da bloccare
         flushBlocking()
+        relockNotes()
+        noteLockRequest.value = null
         autosave?.cancel()
         repo.value?.close()
         repo.value = null
@@ -360,6 +377,11 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
             refreshAuthOptions(); busy.value = false
             say("PIN attivato.")
         }
+    }
+
+    fun setPasswordLock(on: Boolean) {
+        vault.setPasswordLock(on); syncAutoUnlock(); refreshAuthOptions()
+        say(if (on) "Blocco con password attivato." else "Blocco con password disattivato.")
     }
 
     fun disablePin() { vault.disablePin(); syncAutoUnlock(); refreshAuthOptions(); say("PIN disattivato.") }
@@ -410,6 +432,10 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             val n: Note = repo.value?.getNote(id) ?: return@launch
             editorGen++
+            // Il testo riletto dall'editor puo' differire di pochi caratteri da quello salvato (normalizzazione):
+            // aprire una nota senza scrivere non deve contare come modifica.
+            baseRaw = n.content
+            baseMd = runCatching { com.notium.app.ui.RichCodec.load(n.content).let { r -> com.notium.app.ui.RichCodec.toMarkdown(r.text, r.spans) } }.getOrNull()
             _editor.value = EditorState(
                 n.id, n.title, n.content, n.folderId, n.tagIds, n.favorite, n.pinned, n.archived, n.deleted,
                 SaveStatus.Saved, settings.value.openInPreview && !n.deleted,
@@ -422,6 +448,7 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
         val cur = _editor.value ?: return
         if (cur.deleted) return
         if (cur.title == title && cur.content == content) return
+        if (cur.title == title && baseMd != null && content == baseMd && cur.content == baseRaw) return
         _editor.value = cur.copy(title = title, content = content, status = SaveStatus.Unsaved)
         scheduleSave()
     }
@@ -440,6 +467,8 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
         persistMutex.withLock {
             val e = _editor.value ?: return
             val r = repo.value ?: return
+            // Una nota aperta e non modificata non va risalvata: non deve salire in cima alla lista.
+            if (e.noteId != null && e.status == SaveStatus.Saved) return
             if (e.noteId == null && e.title.isBlank() && e.content.isBlank() && e.tagIds.isEmpty()) {
                 _editor.update { it?.copy(status = SaveStatus.Saved) }
                 return
@@ -472,6 +501,7 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
     }
 
     fun closeEditor() {
+        relockNotes()
         val gen = editorGen
         autosave?.cancel()
         back()
@@ -577,6 +607,17 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
             viewModelScope.launch { list.forEach { n -> r.restore(n.id) }; bump() }
         }
     }
+    /** Esegue l'azione assegnata a un gesto di scorrimento. */
+    fun swipeAction(a: com.notium.app.data.SwipeAction, n: NoteSummary) {
+        when (a) {
+            com.notium.app.data.SwipeAction.NONE -> {}
+            com.notium.app.data.SwipeAction.TRASH -> trash(n)
+            com.notium.app.data.SwipeAction.ARCHIVE -> toggleArchived(n)
+            com.notium.app.data.SwipeAction.FAVORITE -> toggleFavorite(n)
+            com.notium.app.data.SwipeAction.PIN -> togglePinned(n)
+            com.notium.app.data.SwipeAction.LOCK -> toggleNoteLock(n.id)
+        }
+    }
     fun togglePinned(n: NoteSummary) = viewModelScope.launch { repo.value?.setPinned(n.id, !n.pinned); bump() }
     fun toggleArchived(n: NoteSummary) = viewModelScope.launch {
         repo.value?.setArchived(n.id, !n.archived); bump()
@@ -647,6 +688,92 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
         if (s is Section.WithTag && s.id == t.id) setSection(Section.All)
     }
 
+    // ------------------------------------------------------------ blocco grafico delle note
+    val noteLockRequest = MutableStateFlow<NoteLockRequest?>(null)
+    private val unlockedNotes = HashSet<Long>()
+    /** Errore (PIN/password errati) mostrato dentro il popup della nota, non in fondo allo schermo. */
+    val noteLockError = MutableStateFlow<String?>(null)
+    fun clearNoteLockError() { noteLockError.value = null }
+
+    fun isNoteLocked(id: Long) = id in settings.value.lockedNotes
+
+    private fun lockEntry(id: Long): List<String>? =
+        settings.value.noteLocks.firstOrNull { it.substringBefore('|') == id.toString() }?.split('|')
+
+    /** True se la nota e' protetta da un PIN numerico, false se da una password. */
+    fun noteLockIsPin(id: Long) = lockEntry(id)?.getOrNull(1) == "P"
+
+    /** Apre la nota; se e' protetta chiede prima il PIN o la password di quella nota. */
+    fun requestOpen(id: Long) {
+        if (isNoteLocked(id) && id !in unlockedNotes) noteLockRequest.value = NoteLockRequest(id, NoteLockMode.OPEN) else openNote(id)
+    }
+
+    /** Blocca la nota (chiedendo di creare PIN o password) oppure la sblocca (dopo la verifica). */
+    fun toggleNoteLock(id: Long) {
+        noteLockRequest.value = when {
+            !isNoteLocked(id) -> NoteLockRequest(id, NoteLockMode.CREATE)
+            id in unlockedNotes -> { removeNoteLock(id); null }
+            else -> NoteLockRequest(id, NoteLockMode.REMOVE)
+        }
+    }
+
+    private fun hashSecret(secret: CharArray, salt: ByteArray): String {
+        val bytes = secret.toUtf8Bytes()
+        val key = Crypto.deriveKey(bytes, salt)
+        bytes.wipe()
+        return Crypto.b64(key).also { key.wipe() }
+    }
+
+    /** True se per questa nota e' abilitato lo sblocco con impronta digitale. */
+    fun noteLockUsesBio(id: Long) = lockEntry(id)?.getOrNull(4) == "B"
+
+    fun createNoteLock(id: Long, secret: CharArray, isPin: Boolean, bio: Boolean) {
+        viewModelScope.launch {
+            busy.value = true
+            val salt = Crypto.randomBytes(Crypto.SALT_LEN)
+            val h = withContext(Dispatchers.IO) { hashSecret(secret, salt) }
+            secret.fill('\u0000')
+            busy.value = false
+            val entry = listOf(id.toString(), if (isPin) "P" else "W", Crypto.b64(salt), h, if (bio) "B" else "-").joinToString("|")
+            updateSettings { st -> st.copy(noteLocks = st.noteLocks.filterNot { it.substringBefore('|') == id.toString() }.toSet() + entry) }
+            unlockedNotes.remove(id)
+            noteLockRequest.value = null
+            flushSettings()
+            say("Nota bloccata.")
+        }
+    }
+
+    private fun removeNoteLock(id: Long) {
+        updateSettings { st -> st.copy(noteLocks = st.noteLocks.filterNot { it.substringBefore('|') == id.toString() }.toSet()) }
+        unlockedNotes.remove(id)
+        flushSettings()
+        say("Nota sbloccata.")
+    }
+
+    fun noteAuthenticated(req: NoteLockRequest) {
+        noteLockRequest.value = null
+        noteLockError.value = null
+        unlockedNotes.add(req.noteId)
+        if (req.mode == NoteLockMode.REMOVE) removeNoteLock(req.noteId) else openNote(req.noteId)
+    }
+
+    fun cancelNoteLock() { noteLockRequest.value = null; noteLockError.value = null }
+    fun relockNotes() { unlockedNotes.clear() }
+
+    fun verifyNoteSecret(secret: CharArray, req: NoteLockRequest) {
+        val e = lockEntry(req.noteId)
+        if (e == null || e.size < 4) { secret.fill('\u0000'); noteLockRequest.value = null; return }
+        viewModelScope.launch {
+            busy.value = true
+            val ok = withContext(Dispatchers.IO) {
+                java.security.MessageDigest.isEqual(hashSecret(secret, Crypto.unb64(e[2])).toByteArray(), e[3].toByteArray())
+            }
+            secret.fill('\u0000')
+            busy.value = false
+            if (ok) noteAuthenticated(req) else noteLockError.value = if (noteLockIsPin(req.noteId)) "PIN errato." else "Password errata."
+        }
+    }
+
     // ----------------------------------------------------------------------- backup
     val pendingRestore = MutableStateFlow<RestorePreview?>(null)
     val importBanner = MutableStateFlow<ImportBanner?>(null)
@@ -670,6 +797,41 @@ class AppViewModel(private val app: Application) : AndroidViewModel(app) {
             busy.value = false
             result.onSuccess { say("Backup cifrato creato: $it note.") }
                 .onFailure { say("Backup non riuscito (spazio insufficiente o destinazione non valida).") }
+        }
+    }
+
+    fun createPlainBackup(uri: Uri) {
+        val r = repo.value ?: return
+        viewModelScope.launch {
+            busy.value = true
+            val result = runCatching {
+                flushBlocking()
+                val data = r.exportData()
+                val bytes = withContext(Dispatchers.IO) { BackupManager.plain(data) }
+                withContext(Dispatchers.IO) {
+                    app.contentResolver.openOutputStream(uri, "wt")?.use { it.write(bytes) } ?: error("flusso non disponibile")
+                }
+                data.notes.size
+            }
+            busy.value = false
+            result.onSuccess { say("Backup non cifrato creato: $it note.") }
+                .onFailure { say("Backup non riuscito (spazio insufficiente o destinazione non valida).") }
+        }
+    }
+
+    /** Apre un file di backup: se e' in chiaro lo legge subito, altrimenti chiama [askPassword]. */
+    fun startRestore(uri: Uri, askPassword: () -> Unit) {
+        viewModelScope.launch {
+            busy.value = true
+            val bytes = runCatching {
+                withContext(Dispatchers.IO) { app.contentResolver.openInputStream(uri)?.use { it.readBytes() } }
+            }.getOrNull()
+            if (bytes == null) { busy.value = false; say("Impossibile leggere il file di backup."); return@launch }
+            if (!BackupManager.isPlain(bytes)) { busy.value = false; askPassword(); return@launch }
+            val res = runCatching { withContext(Dispatchers.IO) { BackupManager.readPlain(bytes) } }
+            busy.value = false
+            res.onSuccess { pendingRestore.value = RestorePreview(it) }
+                .onFailure { say("Il backup e' corrotto o non valido.") }
         }
     }
 
